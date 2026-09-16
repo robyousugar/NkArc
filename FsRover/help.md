@@ -7,13 +7,14 @@ FsRover is a read-only multi-filesystem explorer for Windows.
 ## Contents
 
 1. [Filesystems](#1-filesystems)
-2. [I/O filters](#2-io-filters)
-3. [Disk filters (RAID / LVM)](#3-disk-filters-raid--lvm)
-4. [Encrypted volumes](#4-encrypted-volumes)
-5. [Windows drive mounting](#5-windows-drive-mounting)
-6. [S.M.A.R.T.](#6-smart)
-7. [Keyboard shortcuts](#7-keyboard-shortcuts)
-8. [Command line](#8-command-line)
+2. [Partition tables](#2-partition-tables)
+3. [I/O filters](#3-io-filters)
+4. [Disk filters (RAID / LVM)](#4-disk-filters-raid--lvm)
+5. [Encrypted volumes](#5-encrypted-volumes)
+6. [Windows drive mounting](#6-windows-drive-mounting)
+7. [S.M.A.R.T.](#7-smart)
+8. [Keyboard shortcuts](#8-keyboard-shortcuts)
+9. [Command line](#9-command-line)
 
 ---
 
@@ -605,7 +606,7 @@ Both the control and data tarballs are expanded in place, so a package browses a
 
 The volume label comes from the `Package` field of `control/control`.
 
-**Payload compression:** whatever the [compression filters](#21-compression-filters)
+**Payload compression:** whatever the [compression filters](#31-compression-filters)
 detect by magic — gzip, xz, Zstandard, LZO, LZ4, bzip2 — or none.
 
 #### LHA / LZH — `lzh`
@@ -794,12 +795,55 @@ It exposes:
 
 ---
 
-## 2. I/O filters
+## 2. Partition tables
+
+| Driver | Partition table |
+| --- | --- |
+| `msdos` | DOS / Windows MBR |
+| `gpt` | GUID Partition Table |
+| `apple` | Apple Partition Map |
+| `bsd` | FreeBSD disklabel |
+| `openbsd` | OpenBSD disklabel |
+| `netbsd` | NetBSD disklabel |
+| `dfly` | DragonFly BSD disklabel64 |
+| `acorn` | Acorn / ADFS, with the Linux partition map in the ADFS boot block |
+| `amiga` | Amiga Rigid Disk Block |
+| `dvh` | SGI disk volume header |
+| `plan` | Plan 9 partition table |
+| `sun` | Sun disk label (SPARC) |
+| `sunpc` | Sun x86 disk label |
+| `unixware` | SCO UnixWare slices |
+| `xenix` | SCO Xenix 2.2+ divisions |
+
+**Numbering.** `msdos` gives its four primary slots the numbers 1–4, empty and
+extended slots included, and numbers logical drives from 5, as Windows does.
+The other drivers number the on-disk entry, so a gap in the table leaves a gap
+in the names.
+
+**Nesting.** Two labels are read from inside another partition:
+
+- `bsd` reads a FreeBSD label at sector 1 of a whole disk, or of an MBR
+  partition of type `0xA5`, with its offsets rebased to that partition.
+  `openbsd` and `netbsd` scan MBR partitions of type `0xA6` and `0xA9`; the
+  labels they find describe the whole disk.
+- `unixware` reads a disk label at sector 29 of an MBR partition of type
+  `0x63`, and `xenix` a divvy table at sector 42 of a primary partition of
+  type `0x02`. Divisions are relative to the enclosing partition and the entry
+  covering the enclosure itself is not listed. A Xenix image whose bad-track
+  table requires remapping, or whose CHS geometry does not match the outer
+  partition, is refused.
+
+**GPT.** The protective MBR of a GPT disk is recognised as such and never
+shown as one large MBR partition.
+
+---
+
+## 3. I/O filters
 
 An I/O filter transforms a file on its way in. Three groups are registered:
 compression filters, virtual-disk filters and backup-archive filters.
 
-### 2.1 Compression filters
+### 3.1 Compression filters
 
 These are applied when you open an image with **Open Image (decompress)…** or
 `--file-dec`, or with **Mount as disk (decompress)**, and automatically to
@@ -884,7 +928,7 @@ decoded.
 
 ---
 
-### 2.2 Virtual disk images
+### 3.2 Virtual disk images
 
 These turn a container into a raw disk, which is then partition-scanned and
 mounted as if it were a physical drive. They apply whenever an image is opened
@@ -1094,7 +1138,7 @@ subchannel data and audio track extraction are all ignored.
 
 ---
 
-### 2.3 Backup archives
+### 3.3 Backup archives
 
 #### Acronis True Image — `tib`, `tibx`
 
@@ -1268,7 +1312,7 @@ and split image sets.
 
 ---
 
-## 3. Disk filters (RAID / LVM)
+## 4. Disk filters (RAID / LVM)
 
 Disk filters assemble several member disks, or several partitions, into one
 logical device, which then appears in the tree as its own entry with the member
@@ -1305,7 +1349,7 @@ physical drives requires **File ▸ Run as Administrator**.
 
 ---
 
-## 4. Encrypted volumes
+## 5. Encrypted volumes
 
 When FsRover recognises an encrypted volume it shows it with a padlock icon and
 asks for the passphrase, or a key file, the first time you browse it. A successful unlock creates a `cryptoN` device in the tree, whose
@@ -1472,7 +1516,7 @@ Camellia-128 (`0x15`) in CBC, and AES (`0x16`) in XTS.
 
 ---
 
-## 5. Windows drive mounting
+## 6. Windows drive mounting
 
 **Mount to drive letter** hands a browsed volume to a user-mode filesystem
 driver, so it shows up as an ordinary Windows drive that any program can read.
@@ -1515,7 +1559,7 @@ host.
 
 ---
 
-## 6. S.M.A.R.T.
+## 7. S.M.A.R.T.
 
 **View S.M.A.R.T.** on a physical disk (`hd0`, `hd1`, …) in the tree opens the
 drive's own health report: status and temperature, identity and transfer mode,
@@ -1542,7 +1586,7 @@ hexadecimal.
 
 ---
 
-## 7. Keyboard shortcuts
+## 8. Keyboard shortcuts
 
 | Key | Action |
 | --- | --- |
@@ -1565,7 +1609,7 @@ context-menu key opens the right-click menu for the current selection, and
 
 ---
 
-## 8. Command line
+## 9. Command line
 
 ```
 FsRover.exe [options]
@@ -1600,7 +1644,7 @@ FsRover.exe [options]
   of your own needs no privileges, and physical drives are the only thing that
   does, so a session started this way never touches `\\.\PhysicalDrive*` — you
   see only the image you asked for, plus the `(proc)` pseudo-device.
-- Anything the [I/O filters](#2-io-filters) or the archive and filesystem drivers
+- Anything the [I/O filters](#3-io-filters) or the archive and filesystem drivers
   recognise can be given to `-f`: a raw image, a VHD / VHDX / VDI / QCOW / VMDK /
   DMG container, a backup archive, or a plain `.zip` / `.tar` / `.7z` / `.rpm`.
 - `-d` differs from `-f` only in that the *outer* stream is decompressed first.
