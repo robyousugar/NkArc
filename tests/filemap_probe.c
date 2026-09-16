@@ -6,7 +6,95 @@
 #include <grub/disk.h>
 #include <grub/device.h>
 #include <grub/partition.h>
+#include <grub/hostfile.h>
 #include "rover.h"
+
+/* Compare an opened virtual image against independently reconstructed bytes.
+   Optional bad offset exercises A -> failed decode B -> A on the same cache. */
+int
+product_image_read_probe (int argc, const char **argv)
+{
+	grub_file_t file = NULL;
+	FILE *expected = NULL;
+	unsigned char actual[65536], wanted[65536];
+	grub_uint64_t size, off;
+	unsigned i;
+	int status = 1;
+
+	if (argc != 2 && argc != 3)
+		return 2;
+	rover_init (ROVER_INIT_NO_HOSTDISK);
+	file = grub_hostfile_open (argv[0], GRUB_FILE_TYPE_LOOPBACK | GRUB_FILE_TYPE_FILTER_VDISK);
+	if (!file || grub_strcmp (file->fs->name, "okr"))
+		goto done;
+#ifdef _WIN32
+	if (fopen_s (&expected, argv[1], "rb"))
+		goto done;
+#else
+	expected = fopen (argv[1], "rb");
+	if (!expected)
+		goto done;
+#endif
+	if (fseek (expected, 0, SEEK_END))
+		goto done;
+	size = (grub_uint64_t) ftell (expected);
+	if (size != file->size)
+		goto done;
+	for (i = 0, off = 0; off < size || i < 100; i++)
+	{
+		grub_size_t len;
+
+		if (argc == 3)
+		{
+			if (i == 1)
+			{
+				grub_file_seek (file, strtoull (argv[2], NULL, 0));
+				if (grub_file_read (file, actual, 1) >= 0)
+					goto done;
+				grub_errno = GRUB_ERR_NONE;
+			}
+			if (i == 2)
+				break;
+			off = 0;
+			len = 1024;
+		}
+		else if (i < 100)
+		{
+			/* Reverse, unaligned reads cross bitmap holes and chunk boundaries. */
+			off = (size - 1 - ((grub_uint64_t) i * 65521 % size));
+			len = i % 2 ? 17 : sizeof (actual);
+		}
+		else
+			len = sizeof (actual);
+		if (len > size - off)
+			len = (grub_size_t) (size - off);
+		if (fseek (expected, (long) off, SEEK_SET)
+			|| fread (wanted, 1, len, expected) != len
+			|| grub_file_seek (file, off) == (grub_off_t) -1
+			|| grub_file_read (file, actual, len) != (grub_ssize_t) len
+			|| grub_memcmp (actual, wanted, len))
+			goto done;
+		off += len;
+		if (i == 99)
+			off = 0;
+	}
+	if (argc == 2)
+	{
+		grub_file_seek (file, size);
+		if (grub_file_read (file, actual, 1) != 0)
+			goto done;
+	}
+	status = 0;
+done:
+	if (status)
+		fprintf (stderr, "image read mismatch/error: %s\n", grub_errmsg);
+	if (expected)
+		fclose (expected);
+	if (file)
+		grub_file_close (file);
+	rover_fini ();
+	return status;
+}
 
 static unsigned long long calls, sectors, records, stop_after;
 static grub_err_t (*saved_read) (grub_disk_t, grub_disk_addr_t, grub_size_t, char *);

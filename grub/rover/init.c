@@ -213,6 +213,7 @@
 	mod (cdimage)	\
 	mod (gho)	\
 	mod (tbi)	\
+	mod (okr)	\
 	mod (ewf)
 
 #define ROVER_MOD_DECLARE(name)	\

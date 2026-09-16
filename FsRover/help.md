@@ -1291,6 +1291,20 @@ Ghost writes several different payload shapes, all of which are recognised:
 Track-zero data saved outside a partition is exposed as `track0.bin` when it is
 present. Password-protected images are not decoded.
 
+#### Lenovo OneKey Recovery — `okr`
+
+> Origin: FsRover
+
+Both `OKR_HEADER_810` (`0x09000810`) and `OKR_HEADER` (`0x09000811`) are supported, including
+172/176-byte partition records, stored and raw LZ4 blocks, 32 KiB allocation
+bitmap units, and numbered split files.
+
+A single backed partition is presented directly as a volume. Multiple backed
+partitions appear through a generated GPT, preserving their source LBAs and
+descriptor order. Unbacked partitions are omitted; unused bitmap units read
+as zeros. This view does not export the original MBR/GPT, boot code or excluded
+partition contents, and is not an exact copy of the original disk.
+
 #### TeraByte Image — `tbi`
 
 > Origin: FsRover

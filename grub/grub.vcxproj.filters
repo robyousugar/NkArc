@@ -546,6 +546,9 @@
     <ClCompile Include="grub-core\io\sna.c">
       <Filter>grub-core\io</Filter>
     </ClCompile>
+    <ClCompile Include="grub-core\io\okr.c">
+      <Filter>grub-core\io</Filter>
+    </ClCompile>
     <ClCompile Include="grub-core\io\tbi.c">
       <Filter>grub-core\io</Filter>
     </ClCompile>

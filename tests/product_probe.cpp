@@ -9,6 +9,7 @@
 #include <vector>
 
 extern "C" int product_filemap_probe (int argc, const char **argv);
+extern "C" int product_image_read_probe (int argc, const char **argv);
 
 static void require (bool value, const char *message)
 {
@@ -120,7 +121,8 @@ int wmain (int argc, wchar_t **argv)
 int main (int argc, char **argv)
 #endif
 {
-	if (argc >= 2 && std::filesystem::path (argv[1]) == "--filemap")
+	if (argc >= 2 && (std::filesystem::path (argv[1]) == "--filemap"
+		|| std::filesystem::path (argv[1]) == "--image-read"))
 	{
 		std::vector<std::string> values;
 		std::vector<const char *> arguments;
@@ -131,6 +133,8 @@ int main (int argc, char **argv)
 		}
 		for (const auto &value : values)
 			arguments.push_back (value.c_str ());
+		if (std::filesystem::path (argv[1]) == "--image-read")
+			return product_image_read_probe ((int) arguments.size (), arguments.data ());
 		return product_filemap_probe ((int) arguments.size (), arguments.data ());
 	}
 	if (argc != 3)
