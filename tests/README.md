@@ -57,7 +57,7 @@ bytes, matching `%s` width units. Existing `n == 0` behavior is unchanged.
 
 | Area | Checks |
 | --- | --- |
-| GRUB printf | Native `grub_vsnprintf` and `grub_xvasprintf` versus libc for flags, integer precision, dynamic width/precision, and truncation; guarded-page incomplete formats, `LLONG_MIN`, positional arguments, `%z`, `%c` including NUL, UTF-8 `%C` byte widths, GUID/null output, and format-validator type checks |
+| GRUB printf | Native `grub_vsnprintf` and `grub_xvasprintf` versus libc for flags, integer precision, dynamic width/precision, and truncation; guarded-page incomplete formats, `LLONG_MIN`, positional arguments, `%z`, `%c` including NUL, UTF-8 `%C` byte widths, GUID/null output, format-validator type checks, and `%f`/`%e`/`%g` including `%.17g` round-trip |
 | Product path | ZIP/TAR/FAT12/ext2 root and child listings, directory extraction, exact file/directory inventory, sizes, SHA-256, empty files/directories, ext2 Unicode names |
 | Destination protection | Existing files/directories/symlinks, repeated sources, file-versus-directory collisions, existing directories reserving file names, Windows case/invalid/reserved names, Unicode filenames |
 | Failure recovery | Broken FAT chain followed by a valid file in one extraction: exit 1, diagnostic, success/error counters, failed output removal; truncated image; POSIX `RLIMIT_FSIZE` write failure with a later source still extracted |

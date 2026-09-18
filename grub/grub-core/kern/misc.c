@@ -39,9 +39,11 @@ union printf_arg
       UNSIGNED_INT = 3, UNSIGNED_LONG, UNSIGNED_LONGLONG,
       STRING,
       UUID,
+      DOUBLE,
       UNUSED
     } type;
   long long ll;
+  double d;
 };
 
 struct printf_args
@@ -1023,6 +1025,14 @@ width:
 	case 'C':
 		spec->type = INT;
 		break;
+	case 'f':
+	case 'F':
+	case 'e':
+	case 'E':
+	case 'g':
+	case 'G':
+		spec->type = DOUBLE;
+		break;
 	default:
 		*nextarg = startarg;
 		return 1;
@@ -1063,6 +1073,7 @@ parse_printf_arg_fmt (const char *fmt0, struct printf_args *args,
 	COMPILE_TIME_ASSERT (sizeof (size_t) == sizeof (unsigned)
 			     || sizeof (size_t) == sizeof (unsigned long)
 			     || sizeof (size_t) == sizeof (unsigned long long));
+	COMPILE_TIME_ASSERT (sizeof (double) == sizeof (long long));
 
 	fmt = fmt0;
 	while (*fmt)
@@ -1167,6 +1178,9 @@ parse_printf_args (const char *fmt0, struct printf_args *args, va_list args_in)
 	else
 	  args->ptr[n].ll = va_arg (args_in, unsigned int);
 	break;
+      case DOUBLE:
+	args->ptr[n].d = va_arg (args_in, double);
+	break;
       case UNUSED:
 	break;
       }
@@ -1258,6 +1272,597 @@ write_text (char *str, grub_size_t *count, grub_size_t max_len,
 		write_char (str, count, max_len, *text++);
 	if (spec->left)
 		write_fill (str, count, max_len, fill, ' ');
+}
+
+#define PRINTF_FLOAT_LIMBS	160
+#define PRINTF_FLOAT_MAXPREC	1100
+#define PRINTF_FLOAT_DIGITS	1440
+
+struct ftoa_num
+{
+	grub_uint32_t d[PRINTF_FLOAT_LIMBS];
+	int n;
+};
+
+static void
+ftoa_set (struct ftoa_num *a, grub_uint64_t v)
+{
+	a->d[0] = (grub_uint32_t) v;
+	a->d[1] = (grub_uint32_t) (v >> 32);
+	a->n = a->d[1] ? 2 : (a->d[0] ? 1 : 0);
+}
+
+static void
+ftoa_mul_u32 (struct ftoa_num *a, grub_uint32_t m)
+{
+	grub_uint64_t acc = 0;
+	int i;
+
+	for (i = 0; i < a->n; i++)
+	{
+		acc += (grub_uint64_t) a->d[i] * m;
+		a->d[i] = (grub_uint32_t) acc;
+		acc >>= 32;
+	}
+	if (acc && a->n < PRINTF_FLOAT_LIMBS)
+		a->d[a->n++] = (grub_uint32_t) acc;
+}
+
+static void
+ftoa_mul_pow5 (struct ftoa_num *a, unsigned p)
+{
+	static const grub_uint32_t p5[9] = {
+		1, 5, 25, 125, 625, 3125, 15625, 78125, 390625
+	};
+
+	while (p >= 13)
+	{
+		ftoa_mul_u32 (a, 1220703125u);
+		p -= 13;
+	}
+	while (p >= 8)
+	{
+		ftoa_mul_u32 (a, 390625u);
+		p -= 8;
+	}
+	if (p)
+		ftoa_mul_u32 (a, p5[p]);
+}
+
+static void
+ftoa_shl (struct ftoa_num *a, unsigned bits)
+{
+	unsigned words, rem, i;
+	grub_uint32_t carry;
+
+	if (!bits || !a->n)
+		return;
+	words = bits / 32;
+	rem = bits % 32;
+	if (a->n + (int) words + (rem != 0) > PRINTF_FLOAT_LIMBS)
+		return;
+	if (rem)
+	{
+		carry = 0;
+		for (i = 0; i < (unsigned) a->n; i++)
+		{
+			grub_uint32_t cur = a->d[i];
+			a->d[i] = (cur << rem) | carry;
+			carry = cur >> (32 - rem);
+		}
+		if (carry)
+			a->d[a->n++] = carry;
+	}
+	if (words)
+	{
+		for (i = (unsigned) a->n; i-- > 0;)
+			a->d[i + words] = a->d[i];
+		for (i = 0; i < words; i++)
+			a->d[i] = 0;
+		a->n += (int) words;
+	}
+}
+
+static int
+ftoa_bit (const struct ftoa_num *a, unsigned bit)
+{
+	unsigned i = bit / 32;
+
+	if (i >= (unsigned) a->n)
+		return 0;
+	return (a->d[i] >> (bit % 32)) & 1;
+}
+
+static int
+ftoa_any_below (const struct ftoa_num *a, unsigned bit)
+{
+	unsigned w = bit / 32, rem = bit % 32, j;
+
+	for (j = 0; j < w && j < (unsigned) a->n; j++)
+		if (a->d[j])
+			return 1;
+	if (w < (unsigned) a->n && rem
+	    && (a->d[w] & ((1U << rem) - 1)))
+		return 1;
+	return 0;
+}
+
+static void
+ftoa_add1 (struct ftoa_num *a)
+{
+	int i;
+
+	for (i = 0; i < a->n; i++)
+		if (++a->d[i])
+			return;
+	if (a->n < PRINTF_FLOAT_LIMBS)
+		a->d[a->n++] = 1;
+}
+
+static void
+ftoa_shr_round (struct ftoa_num *a, unsigned bits)
+{
+	int round_up = 0;
+	unsigned words, rem, i;
+
+	if (!bits)
+		return;
+	if (ftoa_bit (a, bits - 1))
+	{
+		if (ftoa_any_below (a, bits - 1))
+			round_up = 1;
+		else
+			round_up = ftoa_bit (a, bits);
+	}
+	words = bits / 32;
+	rem = bits % 32;
+	if (words >= (unsigned) a->n)
+		a->n = 0;
+	else
+	{
+		if (words)
+		{
+			for (i = 0; i < (unsigned) a->n - words; i++)
+				a->d[i] = a->d[i + words];
+			a->n -= (int) words;
+		}
+		if (rem && a->n)
+		{
+			grub_uint32_t carry = 0;
+			for (i = (unsigned) a->n; i-- > 0;)
+			{
+				grub_uint32_t cur = a->d[i];
+				a->d[i] = (cur >> rem) | (carry << (32 - rem));
+				carry = cur & ((1U << rem) - 1);
+			}
+			while (a->n && !a->d[a->n - 1])
+				a->n--;
+		}
+	}
+	if (round_up)
+		ftoa_add1 (a);
+}
+
+static grub_uint32_t
+ftoa_div_u32 (struct ftoa_num *a, grub_uint32_t d)
+{
+	grub_uint64_t rem = 0;
+	int i;
+
+	for (i = a->n - 1; i >= 0; i--)
+	{
+		rem = (rem << 32) | a->d[i];
+		a->d[i] = (grub_uint32_t) (rem / d);
+		rem %= d;
+	}
+	while (a->n && !a->d[a->n - 1])
+		a->n--;
+	return (grub_uint32_t) rem;
+}
+
+static int
+ftoa_to_dec (struct ftoa_num *a, char *buf, int cap)
+{
+	int pos = cap, n;
+
+	if (!a->n)
+	{
+		if (cap > 0)
+			buf[0] = '0';
+		return 1;
+	}
+	while (a->n && pos > 0)
+	{
+		grub_uint32_t r = ftoa_div_u32 (a, 1000000000u);
+		int j;
+
+		for (j = 0; j < 9 && pos > 0 && (a->n || r); j++)
+		{
+			buf[--pos] = (char) ('0' + (r % 10));
+			r /= 10;
+		}
+	}
+	n = cap - pos;
+	if (pos > 0)
+		grub_memmove (buf, buf + pos, n);
+	return n;
+}
+
+static int
+ftoa_scale (char *buf, int cap, grub_uint64_t m, int e2, unsigned prec)
+{
+	struct ftoa_num a;
+	int exp2;
+
+	ftoa_set (&a, m);
+	ftoa_mul_pow5 (&a, prec);
+	exp2 = e2 + (int) prec;
+	if (exp2 >= 0)
+		ftoa_shl (&a, (unsigned) exp2);
+	else
+		ftoa_shr_round (&a, (unsigned) (-exp2));
+	return ftoa_to_dec (&a, buf, cap);
+}
+
+static int
+ftoa_log10_est (grub_uint64_t m, int e2)
+{
+	long long log2 = (long long) e2 + grub_log2ull (m);
+	long long prod = log2 * 1292913986LL;
+	long long q = prod / 4294967296LL;
+
+	if (prod < 0 && q * 4294967296LL != prod)
+		q--;
+	return (int) q;
+}
+
+static int
+round_at (char *d, int n, int keep, int *exp_adj)
+{
+	int i, up = 0;
+
+	*exp_adj = 0;
+	if (keep >= n)
+		return n;
+	if (keep <= 0)
+		return 0;
+	if (d[keep] > '5')
+		up = 1;
+	else if (d[keep] == '5')
+	{
+		for (i = keep + 1; i < n; i++)
+			if (d[i] != '0')
+			{
+				up = 1;
+				break;
+			}
+		if (!up)
+			up = (d[keep - 1] & 1) != 0;
+	}
+	if (!up)
+		return keep;
+	for (i = keep - 1; i >= 0; i--)
+	{
+		if (d[i] != '9')
+		{
+			d[i]++;
+			return keep;
+		}
+		d[i] = '0';
+	}
+	d[0] = '1';
+	for (i = 1; i < keep; i++)
+		d[i] = '0';
+	*exp_adj = 1;
+	return keep;
+}
+
+static int
+ftoa_sigdigits (char *digits, int ndigits, int *exp10, grub_uint64_t m, int e2)
+{
+	int k, dlen = 1, tries, prev_k = -1;
+
+	*exp10 = 0;
+	if (!m)
+	{
+		grub_memset (digits, '0', ndigits);
+		return ndigits;
+	}
+	k = ndigits - 1 - ftoa_log10_est (m, e2);
+	if (k < 0)
+		k = 0;
+	if (k > PRINTF_FLOAT_MAXPREC)
+		k = PRINTF_FLOAT_MAXPREC;
+	for (tries = 0; tries < 8; tries++)
+	{
+		int i, pow10, k_exact, adj;
+
+		if (k == prev_k)
+			break;
+		prev_k = k;
+		dlen = ftoa_scale (digits, PRINTF_FLOAT_DIGITS, m, e2, (unsigned) k);
+		if (dlen == 1 && digits[0] == '0')
+		{
+			if (k >= PRINTF_FLOAT_MAXPREC)
+				break;
+			k += ndigits > 1 ? ndigits : 1;
+			if (k > PRINTF_FLOAT_MAXPREC)
+				k = PRINTF_FLOAT_MAXPREC;
+			continue;
+		}
+		*exp10 = dlen - 1 - k;
+		if (dlen < ndigits)
+		{
+			if (k >= PRINTF_FLOAT_MAXPREC)
+				break;
+			k += ndigits - dlen;
+			if (k > PRINTF_FLOAT_MAXPREC)
+				k = PRINTF_FLOAT_MAXPREC;
+			continue;
+		}
+		if (dlen == ndigits)
+			return ndigits;
+		pow10 = digits[0] == '1';
+		for (i = 1; pow10 && i < dlen; i++)
+			if (digits[i] != '0')
+				pow10 = 0;
+		if (dlen == ndigits + 1 && pow10)
+		{
+			grub_memset (digits + 1, '0', ndigits - 1);
+			return ndigits;
+		}
+		k_exact = ndigits - 1 - *exp10;
+		if (k_exact < 0)
+		{
+			/* Rounding at or left of the units place.  ftoa_scale
+			   rounds its result to an integer, so rounding the
+			   already-rounded digits here would round twice.  Scale
+			   by enough to make value*10^k exact first: this case
+			   only occurs for values >= 1, where -e2 is small. */
+			int k_full = e2 < 0 ? -e2 : 0;
+
+			if (k_full <= PRINTF_FLOAT_MAXPREC && k_full != k)
+			{
+				k = k_full;
+				continue;
+			}
+			round_at (digits, dlen, ndigits, &adj);
+			*exp10 += adj;
+			return ndigits;
+		}
+		if (k_exact > PRINTF_FLOAT_MAXPREC)
+			k_exact = PRINTF_FLOAT_MAXPREC;
+		k = k_exact;
+	}
+	if (dlen < ndigits)
+		grub_memset (digits + dlen, '0', ndigits - dlen);
+	else if (dlen > ndigits)
+	{
+		int adj;
+
+		round_at (digits, dlen, ndigits, &adj);
+		*exp10 += adj;
+	}
+	return ndigits;
+}
+
+static grub_size_t
+exp_chars (int exp10)
+{
+	unsigned ae = (unsigned) (exp10 < 0 ? -exp10 : exp10);
+
+	return ae >= 100 ? 5 : 4;
+}
+
+static void
+write_exp (char *str, grub_size_t *count, grub_size_t max_len, int exp10, int upper)
+{
+	unsigned ae = (unsigned) (exp10 < 0 ? -exp10 : exp10);
+
+	write_char (str, count, max_len, upper ? 'E' : 'e');
+	write_char (str, count, max_len, exp10 < 0 ? '-' : '+');
+	if (ae >= 100)
+		write_char (str, count, max_len, (char) ('0' + ae / 100));
+	write_char (str, count, max_len, (char) ('0' + (ae / 10) % 10));
+	write_char (str, count, max_len, (char) ('0' + ae % 10));
+}
+
+static void
+write_digits (char *str, grub_size_t *count, grub_size_t max_len,
+	      const char *digits, int n)
+{
+	while (n-- > 0)
+		write_char (str, count, max_len, *digits++);
+}
+
+static void
+write_float_pad (char *str, grub_size_t *count, grub_size_t max_len,
+		 const struct printf_format *spec, char signch, grub_size_t len)
+{
+	grub_size_t total = len + (signch != 0);
+	grub_size_t fill = spec->width > total ? spec->width - total : 0;
+
+	if (!spec->left && !spec->zero)
+		write_fill (str, count, max_len, fill, ' ');
+	if (signch)
+		write_char (str, count, max_len, signch);
+	if (!spec->left && spec->zero)
+		write_fill (str, count, max_len, fill, '0');
+}
+
+static void
+write_float (char *str, grub_size_t *count, grub_size_t max_len,
+	     const struct printf_format *spec, double value)
+{
+	char digits[PRINTF_FLOAT_DIGITS];
+	grub_uint64_t bits, mant, m;
+	int negative, biased, e2, exp10 = 0, upper, use_e, sig, dlen, ip;
+	unsigned prec, ndigits, lead_zeros;
+	grub_size_t extra_zeros = 0, fill, len;
+	char signch = 0, conv = spec->conversion;
+
+	grub_memcpy (&bits, &value, sizeof (bits));
+	negative = (int) (bits >> 63);
+	biased = (int) ((bits >> 52) & 0x7ff);
+	mant = bits & 0xfffffffffffffULL;
+	upper = conv == 'F' || conv == 'E' || conv == 'G';
+	if (negative)
+		signch = '-';
+	else if (spec->sign)
+		signch = spec->sign;
+	if (biased == 0x7ff)
+	{
+		const char *lit = mant ? (upper ? "NAN" : "nan") : (upper ? "INF" : "inf");
+		char tmp[8];
+		grub_size_t n = 0;
+
+		if (signch)
+			tmp[n++] = signch;
+		tmp[n++] = lit[0];
+		tmp[n++] = lit[1];
+		tmp[n++] = lit[2];
+		write_text (str, count, max_len, spec, tmp, n);
+		return;
+	}
+	prec = spec->have_precision ? (unsigned) spec->precision : 6;
+	if ((conv == 'g' || conv == 'G') && !prec)
+		prec = 1;
+	if (prec > PRINTF_FLOAT_MAXPREC)
+	{
+		/* %g strips trailing zeros again, so only '#' needs them. */
+		extra_zeros = (conv == 'g' || conv == 'G') && !spec->alternate
+			? 0 : prec - PRINTF_FLOAT_MAXPREC;
+		prec = PRINTF_FLOAT_MAXPREC;
+	}
+	if (biased == 0)
+	{
+		m = mant;
+		e2 = -1074;
+	}
+	else
+	{
+		m = mant | (1ULL << 52);
+		e2 = biased - 1023 - 52;
+	}
+	if (conv == 'f' || conv == 'F')
+	{
+		dlen = ftoa_scale (digits, PRINTF_FLOAT_DIGITS, m, e2, prec);
+		if (!prec)
+			len = (grub_size_t) dlen + (spec->alternate ? 1 : 0);
+		else if (dlen <= (int) prec)
+			len = 2 + prec;
+		else
+			len = (grub_size_t) dlen + 1;
+		len += extra_zeros;
+		write_float_pad (str, count, max_len, spec, signch, len);
+		if (!prec)
+		{
+			write_digits (str, count, max_len, digits, dlen);
+			if (spec->alternate)
+				write_char (str, count, max_len, '.');
+		}
+		else if (dlen <= (int) prec)
+		{
+			write_char (str, count, max_len, '0');
+			write_char (str, count, max_len, '.');
+			write_fill (str, count, max_len, (grub_size_t) ((int) prec - dlen), '0');
+			write_digits (str, count, max_len, digits, dlen);
+		}
+		else
+		{
+			ip = dlen - (int) prec;
+			write_digits (str, count, max_len, digits, ip);
+			write_char (str, count, max_len, '.');
+			write_digits (str, count, max_len, digits + ip, (int) prec);
+		}
+		write_fill (str, count, max_len, extra_zeros, '0');
+	}
+	else if (conv == 'e' || conv == 'E')
+	{
+		ndigits = prec + 1;
+		ftoa_sigdigits (digits, (int) ndigits, &exp10, m, e2);
+		len = 1;
+		if (prec || spec->alternate)
+			len += 1 + prec;
+		len += extra_zeros + exp_chars (exp10);
+		write_float_pad (str, count, max_len, spec, signch, len);
+		write_char (str, count, max_len, digits[0]);
+		if (prec || spec->alternate)
+		{
+			write_char (str, count, max_len, '.');
+			if (prec)
+				write_digits (str, count, max_len, digits + 1, (int) prec);
+		}
+		write_fill (str, count, max_len, extra_zeros, '0');
+		write_exp (str, count, max_len, exp10, upper);
+	}
+	else
+	{
+		ndigits = prec;
+		ftoa_sigdigits (digits, (int) ndigits, &exp10, m, e2);
+		sig = (int) ndigits;
+		if (!spec->alternate)
+			while (sig > 1 && digits[sig - 1] == '0')
+				sig--;
+		use_e = exp10 < -4 || exp10 >= (int) prec;
+		if (use_e)
+		{
+			len = 1;
+			if (sig > 1 || spec->alternate)
+				len += 1 + (grub_size_t) (sig - 1);
+			len += extra_zeros + exp_chars (exp10);
+			write_float_pad (str, count, max_len, spec, signch, len);
+			write_char (str, count, max_len, digits[0]);
+			if (sig > 1 || spec->alternate)
+			{
+				write_char (str, count, max_len, '.');
+				if (sig > 1)
+					write_digits (str, count, max_len, digits + 1, sig - 1);
+			}
+			write_fill (str, count, max_len, extra_zeros, '0');
+			write_exp (str, count, max_len, exp10, upper);
+		}
+		else if (exp10 >= 0)
+		{
+			ip = exp10 + 1;
+			if (ip >= sig)
+			{
+				len = (grub_size_t) ip + (spec->alternate ? 1 : 0) + extra_zeros;
+				write_float_pad (str, count, max_len, spec, signch, len);
+				write_digits (str, count, max_len, digits, sig);
+				write_fill (str, count, max_len, (grub_size_t) (ip - sig), '0');
+				if (spec->alternate)
+					write_char (str, count, max_len, '.');
+				write_fill (str, count, max_len, extra_zeros, '0');
+			}
+			else
+			{
+				len = (grub_size_t) sig + 1 + extra_zeros;
+				write_float_pad (str, count, max_len, spec, signch, len);
+				write_digits (str, count, max_len, digits, ip);
+				write_char (str, count, max_len, '.');
+				write_digits (str, count, max_len, digits + ip, sig - ip);
+				write_fill (str, count, max_len, extra_zeros, '0');
+			}
+		}
+		else
+		{
+			lead_zeros = (unsigned) (-exp10 - 1);
+			len = 2 + lead_zeros + (grub_size_t) sig + extra_zeros;
+			write_float_pad (str, count, max_len, spec, signch, len);
+			write_char (str, count, max_len, '0');
+			write_char (str, count, max_len, '.');
+			write_fill (str, count, max_len, lead_zeros, '0');
+			write_digits (str, count, max_len, digits, sig);
+			write_fill (str, count, max_len, extra_zeros, '0');
+		}
+	}
+	if (spec->left)
+	{
+		len += signch != 0;
+		fill = spec->width > len ? spec->width - len : 0;
+		write_fill (str, count, max_len, fill, ' ');
+	}
 }
 
 static int
@@ -1404,6 +2009,14 @@ grub_vsnprintf_real (char *str, grub_size_t max_len, const char *fmt0,
 			write_text (str, &count, max_len, &spec, encoded, len);
 			break;
 		}
+		case 'f':
+		case 'F':
+		case 'e':
+		case 'E':
+		case 'g':
+		case 'G':
+			write_float (str, &count, max_len, &spec, args->ptr[spec.arg].d);
+			break;
 		case 's':
 		{
 			grub_size_t len = 0;

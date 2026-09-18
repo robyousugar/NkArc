@@ -1,5 +1,6 @@
 /* Real GRUB printf regression probe. GPL-3.0-or-later. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -81,6 +82,40 @@ compare (const char *fmt, ...)
 	else
 		check_bytes (fmt, expected, (size_t) len, ap);
 	va_end (ap);
+}
+
+static double
+bits_to_double (grub_uint64_t bits)
+{
+	double value;
+	memcpy (&value, &bits, sizeof (value));
+	return value;
+}
+
+static void
+expect_roundtrip (double value)
+{
+	char text[64];
+	double parsed;
+	grub_uint64_t original, recovered;
+
+	memcpy (&original, &value, sizeof (original));
+	if (((original >> 52) & 0x7ff) == 0x7ff)
+		return;
+	checks++;
+	if (grub_snprintf (text, sizeof (text), "%.17g", value) < 0)
+	{
+		fprintf (stderr, "FAIL float snprintf\n");
+		failures++;
+		return;
+	}
+	parsed = strtod (text, NULL);
+	memcpy (&recovered, &parsed, sizeof (recovered));
+	if (original != recovered)
+	{
+		fprintf (stderr, "FAIL round-trip [%s]\n", text);
+		failures++;
+	}
 }
 
 static void
@@ -211,6 +246,52 @@ product_printf_probe (const char *mode)
 		check_format ("%pG", "%pG", 1);
 		check_format ("%% %s", "%s %d", 1);
 		check_format ("%q", "", 0);
+		compare ("%f", 0.0);
+		compare ("%f", 1.0);
+		compare ("%+08.2f", -3.5);
+		compare ("%10.2f", 3.5);
+		compare ("%-10.2f", 3.5);
+		compare ("%.0f", 2.5);
+		compare ("%#.0f", 2.5);
+		compare ("%.1f", 0.25);
+		compare ("%f", -0.0);
+		expect ("1.000000e+00", "%e", 1.0);
+		expect ("-1.250000e+01", "%e", -12.5);
+		expect ("1e-05", "%g", 1e-5);
+		expect ("0.0001", "%g", 1e-4);
+		expect ("123456", "%g", 123456.0);
+		expect ("1.23457e+06", "%g", 1234567.0);
+		expect ("1.25", "%g", 1.25);
+		expect ("inf", "%f", bits_to_double (0x7ff0000000000000ULL));
+		expect ("-INF", "%F", bits_to_double (0xfff0000000000000ULL));
+		expect ("INF", "%F", bits_to_double (0x7ff0000000000000ULL));
+		expect ("nan", "%f", bits_to_double (0x7ff8000000000000ULL));
+		expect ("NAN", "%G", bits_to_double (0x7ff8000000000000ULL));
+		expect ("  inf", "%5f", bits_to_double (0x7ff0000000000000ULL));
+		expect ("3 1.5", "%2$d %1$g", 1.5, 3);
+		expect ("9.953e-310", "%.4g", bits_to_double (0x0000b73807bd550fULL));
+		expect ("    +2.E-256", "%+#12.0G", bits_to_double (0x0add7295677bdde0ULL));
+		expect ("-1.987541379511E+03", "%.12E", bits_to_double (0xc09f0e2a5f63f14fULL));
+		compare ("%.0E", bits_to_double (0x403963fbc335cdf0ULL));
+		compare ("%.0g", bits_to_double (0x403963fbc335cdf0ULL));
+		compare ("%.3G", bits_to_double (0x40be91781843f240ULL));
+		compare ("%1e", bits_to_double (0xc18392480b561cf0ULL));
+		check_format ("%f %e %g", "%f %f %f", 1);
+		check_format ("%f", "%d", 0);
+		check_format ("%*.*f", "%d %d %f", 1);
+		expect_roundtrip (0.0);
+		expect_roundtrip (-0.0);
+		expect_roundtrip (1.0);
+		expect_roundtrip (0.1);
+		expect_roundtrip (1.0 / 3.0);
+		expect_roundtrip (-12.5);
+		expect_roundtrip (1e-5);
+		expect_roundtrip (1e20);
+		expect_roundtrip (bits_to_double (1));
+		expect_roundtrip (bits_to_double (0x0010000000000000ULL));
+		expect_roundtrip (bits_to_double (0x7fefffffffffffffULL));
+		for (i = 0; i < 64; i++)
+			expect_roundtrip (bits_to_double ((grub_uint64_t) 0x123456789abcdeULL << (i % 12) ^ ((grub_uint64_t) i * 0x9e3779b97f4a7c15ULL)));
 	}
 	status = failures != 0;
 	printf ("printf %s: %u checks, %u failures\n", mode, checks, failures);

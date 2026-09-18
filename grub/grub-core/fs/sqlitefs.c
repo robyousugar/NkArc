@@ -34,8 +34,6 @@
 #include <grub/dl.h>
 #include <grub/safemath.h>
 
-#include <stdio.h> /* snprintf: GRUB's formatter has no floating-point support. */
-
 GRUB_MOD_LICENSE ("GPLv3+");
 
 #define SQLITEFS_HEADER_SIZE	100
@@ -1357,7 +1355,7 @@ sqlitefs_json_value (struct sqlitefs_data *data, struct sqlitefs_buf *buf,
 			return sqlitefs_json_string (buf,
 				(const grub_uint8_t *) "non-finite", 10);
 		grub_memcpy (&real, &bits, sizeof (real));
-		written = snprintf (number, sizeof (number), "%.17g", real);
+		written = grub_snprintf (number, sizeof (number), "%.17g", real);
 		if (written < 0 || (grub_size_t) written >= sizeof (number))
 		{
 			grub_error (GRUB_ERR_BAD_FS, "cannot format SQLite real value");
