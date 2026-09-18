@@ -112,6 +112,7 @@ jobs:
             Copy-Item -LiteralPath $libcdiPath -Destination $artifactDirectory
           }
           Copy-Item -LiteralPath LICENSE -Destination $artifactDirectory
+          Copy-Item -LiteralPath THIRD_PARTY_NOTICES.txt -Destination $artifactDirectory
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -155,9 +156,11 @@ jobs:
             $programPath = Join-Path $sourceDirectory 'FsRover.exe'
             $cliProgramPath = Join-Path $sourceDirectory 'CliRover.exe'
             $licensePath = Join-Path $sourceDirectory 'LICENSE'
+            $noticesPath = Join-Path $sourceDirectory 'THIRD_PARTY_NOTICES.txt'
             if (-not (Test-Path -LiteralPath $programPath) -or
                 -not (Test-Path -LiteralPath $cliProgramPath) -or
-                -not (Test-Path -LiteralPath $licensePath)) {
+                -not (Test-Path -LiteralPath $licensePath) -or
+                -not (Test-Path -LiteralPath $noticesPath)) {
               throw "Incomplete release input for $architecture."
             }
 

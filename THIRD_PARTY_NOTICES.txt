@@ -1,0 +1,413 @@
+THIRD-PARTY NOTICES
+===================
+
+FsRover, CliRover, LinuxRover and the bundled GNU GRUB tree (together
+"Rover") are distributed under the GNU General Public License, version 3
+or (at your option) any later version (GPL-3.0-or-later).  The full text
+of the GPLv3 is provided in the file LICENSE at the root of this source
+distribution.
+
+Rover includes, links against, or otherwise redistributes the third-party
+components listed below.  This file records their copyright notices and
+licenses.  It is organized as:
+
+  1. Component index
+  2. Permissive licenses (MIT, BSD, zlib, public domain)
+  3. Copyleft components (GPL / LGPL references)
+  4. Components with special licenses (unRAR, WinFsp)
+  5. Build-time NuGet packages
+  6. External runtime dependencies (not bundled)
+
+
+1. COMPONENT INDEX
+------------------
+
+Component                License                  Location
+-------------------------------------------------------------
+GNU GRUB                 GPL-3.0-or-later         grub/
+file (libmagic)          BSD-2-Clause             filetype/file/
+Dokany                   LGPL-3.0-or-later        FsRover/dokan/
+WinFsp-FUSE ABI          GPL-3.0 + FLOSS exc.     FsRover/winfsp_fuse.h
+libcdi                   MIT                      FsRover/libcdi/
+MD4C                     MIT                      FsRover/md4c/
+NanoSVG                  zlib                     FsRover/nanosvg/
+tiny-webp                BSD-3-Clause             FsRover/tiny-webp/
+stb_image                Public domain / MIT      FsRover/stb_image.h
+Optparse                 Public domain            common/optparse.*
+7-Zip LZMA SDK           Public domain            grub/grub-core/lib/7z/
+Brotli                   MIT                      grub/grub-core/lib/brotli/
+bzip2                    bzip2 license            grub/grub-core/lib/bzip2/
+libzbitmap               MIT                      grub/grub-core/lib/libzbitmap/
+LZ4                      BSD-2-Clause             grub/grub-core/lib/lz4/
+LZFSE                    BSD-3-Clause             grub/grub-core/lib/lzfse/
+miniz                    MIT                      grub/grub-core/lib/miniz/
+JSMN                     MIT                      grub/grub-core/lib/json/
+XZ Embedded              GPL-3.0-or-later         grub/grub-core/lib/xzembed/
+Yxml                     MIT                      grub/grub-core/lib/yxml/
+Zstandard / xxHash       BSD-3-Clause or GPL-2.0  grub/grub-core/lib/zstd/
+Libgcrypt primitives     LGPL-2.1-or-later        grub/grub-core/lib/libgcrypt/
+wimboot                  GPL-2.0-or-later         grub/grub-core/lib/wimboot/
+minilzo                  GPL-2.0-or-later         grub/grub-core/lib/minilzo/
+VirtualBox               GPL-3.0-only or CDDL-1.0 grub/grub-core/lib/vbox/
+unRAR                    unRAR freeware license   grub/grub-core/lib/unrar/
+VC-LTL                   EPL-2.0                  (NuGet)
+YY-Thunks                MIT                      (NuGet)
+YY.NuGet.Import.Helper   MIT                      (NuGet)
+
+The original license text for each component is also kept next to its
+sources where the upstream project provides one.
+
+
+2. PERMISSIVE LICENSES
+----------------------
+
+
+2.1 MIT License
+---------------
+
+Applies to:
+* libcdi
+    Copyright (c) 2008-2023 hiyohiyo
+* MD4C
+    Copyright © 2016-2024 Martin Mitáš
+* Brotli
+    Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors
+* libzbitmap
+    Copyright (c) 2022 Corellium LLC
+* miniz
+    Copyright 2013-2014 RAD Game Tools and Valve Software
+    Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
+* JSMN
+    Copyright (c) 2010 Serge Zaitsev
+* Yxml
+    Copyright (c) 2013-2014 Yoran Heling
+* YY-Thunks and YY.NuGet.Import.Helper
+    Copyright (c) Chuyu Team
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+2.2 BSD 2-Clause License
+------------------------
+
+Applies to:
+* file/libmagic
+    Copyright (c) Ian F. Darwin 1986, 1987, 1989, 1990, 1991, 1992, 1994, 1995.
+    Software written by Ian F. Darwin and others;
+    maintained 1994- Christos Zoulas.
+* LZ4
+    Copyright (c) 2011-2020, Yann Collet
+    All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The file/libmagic COPYING additionally states that the software is not
+subject to any export provision of the United States Department of
+Commerce, and may be exported to any country or planet.
+
+
+2.3 BSD 3-Clause License
+------------------------
+
+Applies to:
+* tiny-webp
+    Copyright (c) 2010, 2011, Google Inc. All rights reserved.
+    Copyright (c) 2025, justus2510
+* LZFSE
+    Copyright (c) 2015-2016, Apple Inc. All rights reserved.
+* Zstandard / xxHash
+    Copyright (c) 2013-present, Yann Collet
+    Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder(s) nor the names of any
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+2.4 zlib License (NanoSVG)
+--------------------------
+
+Copyright (c) 2013-14 Mikko Mononen memon@inside.org
+
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not
+   be misrepresented as being the original software.
+3. This notice may not be removed or altered from any source
+   distribution.
+
+
+2.5 bzip2 License
+-----------------
+
+Copyright (C) 1996-2010 Julian R Seward.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software.  If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+
+3. Altered source versions must be plainly marked as such, and must not
+   be misrepresented as being the original software.
+
+4. The name of the author may not be used to endorse or promote products
+   derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+Julian Seward, jseward@acm.org
+bzip2/libbzip2 version 1.1.0 of 6 September 2010
+
+
+2.6 Public domain / unencumbered
+--------------------------------
+
+The following components are released into the public domain or under an
+equivalent unencumbered dedication.  No copyright is asserted:
+
+* stb_image
+* Optparse
+* 7-Zip LZMA SDK
+* XZ Embedded
+
+
+3. COPYLEFT COMPONENTS
+----------------------
+
+3.1 GNU GRUB - GPL-3.0-or-later
+------------------------------------
+
+Copyright (C) 1999-2024 Free Software Foundation, Inc. and contributors.
+The grub/ tree, including its own build-time source, is licensed under
+GPL-3.0-or-later; see LICENSE.  Several subdirectories bundle upstream
+libraries under their own terms (sections 2 and 4).
+
+
+3.2 Libgcrypt primitives - LGPL-2.1-or-later
+--------------------------------------------
+
+The cipher, hash, MAC and KDF primitives in
+grub/grub-core/lib/libgcrypt/ are derived from Libgcrypt: Copyright (C)
+1998-2023 Free Software Foundation, Inc.; Copyright (C) 2013 g10 Code
+GmbH and others.  They are licensed under the GNU Lesser General Public
+License, version 2.1 or (at your option) any later version (LGPL-2.1-
+or-later).  A copy of the LGPL-2.1 is available at
+<https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html>; the per-file
+headers carry the individual copyright holders.
+
+
+3.3 wimboot - GPL-2.0-or-later
+--------------------------------------
+
+grub/grub-core/lib/wimboot/ (huffman.c, lzx.c, xca.c) - Copyright (C)
+2012-2014 Michael Brown <mbrown@fensystems.co.uk>.  Licensed under the
+GNU General Public License, version 2 or (at your option) any later
+version.  A copy of the GPLv2 is available at
+<https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
+
+
+3.4 minilzo - GPL-2.0-or-later
+------------------------------------
+
+grub/grub-core/lib/minilzo/ - Copyright (C) 1996-2017 Markus Franz Xaver
+Johannes Oberhumer.  All Rights Reserved.  The LZO library is free
+software; you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation;
+either version 2 of the License, or (at your option) any later version.
+See <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.  The
+copyright string embedded in minilzo.c must be retained in the
+executable: "LZO Copyright (C) 1996-2017 Markus Franz Xaver Johannes
+Oberhumer".
+
+
+3.5 VirtualBox - GPL-3.0-only or CDDL-1.0
+---------------------------------------------------
+
+grub/grub-core/lib/vbox/vbox.c and vbox.h - Copyright (C) 2006-2023
+Oracle and/or its affiliates.  SPDX-License-Identifier: GPL-3.0-only OR
+CDDL-1.0.  Rover uses these files under the GPLv3 option; the GPLv3 text
+is in LICENSE.  The Common Development and Distribution License 1.0 is
+available at <https://opensource.org/licenses/CDDL-1.0>.
+
+
+3.6 Dokany - LGPL-3.0-or-later
+------------------------------
+
+FsRover/dokan/ contains Dokany public headers and prebuilt runtime
+binaries (dokan2.dll and the Microsoft-signed kernel driver dokan2.sys
+for x64, x86 and ARM64).  Copyright (C) 2020-2025 Google, Inc.;
+Copyright (C) 2015-2019 Adrien J. <liryna.stark@gmail.com> and Maxime C.
+<maxime@islog.com>; Copyright (C) 2007-2011 Hiroki Asakawa
+<info@dokan-dev.net>.  Licensed under the GNU Lesser General Public
+License, version 3 or (at your option) any later version.  See
+<https://www.gnu.org/licenses/lgpl-3.0.html>.
+
+The Dokany project also offers an MIT alternative for the user-mode
+library; see the upstream repository <https://github.com/dokan-dev/dokany>
+for the license files it ships (license.lgpl.txt, license.mit.txt).
+
+
+4. COMPONENTS WITH SPECIAL LICENSES
+-----------------------------------
+
+
+4.1 unRAR - freeware license
+-----------------------------
+
+grub/grub-core/lib/unrar/ contains the unRAR source.  Copyright (C)
+Alexander L. Roshal.  The unRAR sources are freeware and may be used in
+any software to handle RAR archives without limitations free of charge,
+but may not be used to re-create the RAR compression algorithm, which is
+proprietary.  Distribution of modified unRAR sources in separate form or
+as part of other software is permitted, provided that it is clearly
+stated in the documentation and source comments that the code may not be
+used to develop a RAR (WinRAR) compatible archiver.  No person or company
+may charge a fee for the distribution of unRAR without written permission
+from the copyright holder.  THE RAR ARCHIVER AND THE UNRAR UTILITY ARE
+DISTRIBUTED "AS IS", WITHOUT WARRANTY OF ANY KIND.  The full notice is
+kept in grub/grub-core/lib/unrar/LICENSE.txt.
+
+
+4.2 WinFsp - GPLv3 with FLOSS exception
+----------------------------------------
+
+FsRover/winfsp_fuse.h reproduces the minimal WinFsp-FUSE 2.8 ABI
+declarations and is derived from WinFsp <https://github.com/winfsp/winfsp>.
+The WinFsp project is Copyright (C) Bill Zissimopoulos and is licensed
+under the GPLv3.  As a special exception, Bill Zissimopoulos grants
+additional permission to Free/Libre and Open Source Software to link with
+the platform-specific WinFsp DLL and to distribute unmodified WinFsp
+binary releases, provided that the software is distributed under a
+recognized free/open source license, includes the notice "WinFsp -
+Windows File System Proxy, Copyright (C) Bill Zissimopoulos" and a link
+to the WinFsp repository in its user interface and documentation, and is
+not linked or distributed with proprietary software.  Rover is
+GPL-3.0-or-later, includes the WinFsp credit in its About dialog, and
+links against the user-installed WinFsp DLL only.  The full WinFsp
+license text is available at
+<https://github.com/winfsp/winfsp/blob/master/License.txt>.
+
+
+5. BUILD-TIME NUGET PACKAGES
+----------------------------
+
+The following packages are restored into packages/ at build time.  They
+are Microsoft Visual C++ build helpers and are not part of the source
+distribution of Rover.
+
+* VC-LTL 5.3.1 - Copyright (c) Chuyu Team.  Eclipse Public License 2.0
+  (EPL-2.0).  <https://github.com/Chuyu-Team/VC-LTL5>,
+  <https://www.eclipse.org/legal/epl-2.0/>.
+* YY-Thunks 1.2.1 - Copyright 2021, Chuyu Team.  MIT License.
+  <https://github.com/Chuyu-Team/YY-Thunks>.
+* YY.NuGet.Import.Helper 1.0.2 - Copyright (c) 2020 YY.  MIT License.
+  <https://github.com/mingkuang-Chuyu/YY.NuGet.Import.Helper>.
+
+
+6. EXTERNAL RUNTIME DEPENDENCIES (NOT BUNDLED)
+----------------------------------------------
+
+These are not redistributed with Rover.  They must be provided by the
+user or the operating system, and are governed by their own licenses:
+
+* WinFsp (Windows) - GPLv3 with FLOSS exception.  Loaded dynamically when
+  installed; see 4.2.
+* Dokany (Windows) - the bundled dokan2.dll/dokan2.sys are installed into
+  the system when the user chooses to enable the Dokany host; see 3.6.
+* libfuse3 (Linux) - LGPL-2.1-or-later.  Required to build and run the
+  LinuxRover FUSE front end.  <https://github.com/libfuse/libfuse>.
+
+
+----------------------------------------------------------------------
+
+Copyright notices are reproduced as stated by the upstream projects.  If
+a component is missing or a notice is inaccurate, please report it via
+the project issue tracker so this file can be corrected.
