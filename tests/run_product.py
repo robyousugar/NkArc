@@ -331,6 +331,8 @@ class Suite:
         generate_eafs(self.fixtures)
         generate_okr(self.fixtures)
         before = {p.name: digest(p.read_bytes()) for p in self.fixtures.iterdir()}
+        for mode in ("formats", "trailing", "null", "minimum"):
+            self.case("printf " + mode, lambda mode=mode: self.command([self.probe, "--printf", mode]))
         self.case("zip list/extract", lambda: self.basic("basic.zip", FILES, DIRS))
         self.case("tar list/extract", lambda: self.basic("basic.tar", FILES, DIRS))
         self.case("fat12 list/extract", lambda: self.basic("basic.img", FAT_FILES, {"dir"}))

@@ -38,7 +38,8 @@ union printf_arg
       INT, LONG, LONGLONG,
       UNSIGNED_INT = 3, UNSIGNED_LONG, UNSIGNED_LONGLONG,
       STRING,
-      UUID
+      UUID,
+      UNUSED
     } type;
   long long ll;
 };
@@ -818,7 +819,7 @@ grub_lltoa (char *str, int c, unsigned long long n)
 
   if ((long long) n < 0 && c == 'd')
     {
-      n = (unsigned long long) (-((long long) n));
+      n = 0ULL - n;
       *str++ = '-';
     }
 
@@ -854,234 +855,283 @@ grub_lltoa (char *str, int c, unsigned long long n)
   return p;
 }
 
-/*
- * Parse printf() fmt0 string into args arguments.
- *
- * The parsed arguments are either used by a printf() function to format the fmt0
- * string or they are used to compare a format string from an untrusted source
- * against a format string with expected arguments.
- *
- * When the fmt_check is set to !0, e.g. 1, then this function is executed in
- * printf() format check mode. This enforces stricter rules for parsing the
- * fmt0 to limit exposure to possible errors in printf() handling. It also
- * disables positional parameters, "$", because some formats, e.g "%s%1$d",
- * cannot be validated with the current implementation.
- *
- * The max_args allows to set a maximum number of accepted arguments. If the fmt0
- * string defines more arguments than the max_args then the parse_printf_arg_fmt()
- * function returns an error. This is currently used for format check only.
- */
+/* A single scanner is shared by argument collection, validation and output.
+   It never advances past NUL, including incomplete flags/width/lengths. */
+struct printf_format
+{
+	grub_size_t width, precision;
+	grub_size_t arg, width_arg, precision_arg;
+	int type;
+	char conversion, longfmt;
+	char left, zero, sign, alternate, have_precision, positional;
+	char dynamic_width, dynamic_precision;
+};
+
+static grub_size_t
+printf_read_uint (const char **fmt)
+{
+	grub_size_t value = 0;
+
+	while (grub_isdigit (**fmt))
+	{
+		unsigned digit = *(*fmt)++ - '0';
+
+		/* Widths and precisions beyond the int return range cannot be
+		   represented. Saturate without wrapping or changing grub_errno. */
+		if (value > (GRUB_INT_MAX - digit) / 10)
+			value = GRUB_INT_MAX;
+		else
+			value = value * 10 + digit;
+	}
+	return value;
+}
+
+/* Return a one-based position, or zero for a sequential argument. */
+static grub_size_t
+printf_read_position (const char **fmt, struct printf_format *spec)
+{
+	const char *start = *fmt;
+	grub_size_t position;
+
+	if (!grub_isdigit (**fmt))
+		return 0;
+	position = printf_read_uint (fmt);
+	if (**fmt != '$')
+	{
+		*fmt = start;
+		return 0;
+	}
+	(*fmt)++;
+	spec->positional = 1;
+	return position ? position : GRUB_SIZE_MAX;
+}
+
+static int
+parse_printf_format (const char **fmt, struct printf_format *spec,
+		     grub_size_t *nextarg)
+{
+	grub_size_t startarg = *nextarg;
+	grub_size_t position;
+	char c;
+
+	grub_memset (spec, 0, sizeof (*spec));
+	spec->type = UNUSED;
+	position = printf_read_position (fmt, spec);
+	for (;; (*fmt)++)
+	{
+		switch (**fmt)
+		{
+		case '-':
+			spec->left = 1;
+			break;
+		case '0':
+			spec->zero = 1;
+			break;
+		case '+':
+			spec->sign = '+';
+			break;
+		case ' ':
+			if (!spec->sign)
+				spec->sign = ' ';
+			break;
+		case '#':
+			spec->alternate = 1;
+			break;
+		default:
+			goto width;
+		}
+	}
+width:
+	if (**fmt == '*')
+	{
+		grub_size_t index;
+
+		(*fmt)++;
+		spec->dynamic_width = 1;
+		index = printf_read_position (fmt, spec);
+		spec->width_arg = index ? index - 1 : *nextarg;
+		(*nextarg)++;
+	}
+	else
+		spec->width = printf_read_uint (fmt);
+	if (**fmt == '.')
+	{
+		(*fmt)++;
+		spec->have_precision = 1;
+		if (**fmt == '*')
+		{
+			grub_size_t index;
+
+			(*fmt)++;
+			spec->dynamic_precision = 1;
+			index = printf_read_position (fmt, spec);
+			spec->precision_arg = index ? index - 1 : *nextarg;
+			(*nextarg)++;
+		}
+		else
+			spec->precision = printf_read_uint (fmt);
+	}
+	if (**fmt == 'z')
+	{
+		(*fmt)++;
+		if (sizeof (size_t) == sizeof (unsigned long))
+			spec->longfmt = 1;
+		else if (sizeof (size_t) == sizeof (unsigned long long))
+			spec->longfmt = 2;
+	}
+	else if (**fmt == 'l')
+	{
+		(*fmt)++;
+		spec->longfmt = 1;
+		if (**fmt == 'l')
+		{
+			(*fmt)++;
+			spec->longfmt = 2;
+		}
+	}
+	c = **fmt;
+	if (!c)
+	{
+		*nextarg = startarg;
+		return 0;
+	}
+	(*fmt)++;
+	spec->conversion = c;
+	switch (c)
+	{
+	case 'x':
+	case 'X':
+	case 'u':
+	case 'o':
+		spec->type = UNSIGNED_INT + spec->longfmt;
+		break;
+	case 'd':
+		spec->type = INT + spec->longfmt;
+		break;
+	case 'p':
+		spec->type = sizeof (void *) == sizeof (long long) ? UNSIGNED_LONGLONG : UNSIGNED_INT;
+		if (**fmt == 'G')
+		{
+			(*fmt)++;
+			spec->type = UUID;
+		}
+		break;
+	case 's':
+		spec->type = STRING;
+		break;
+	case 'c':
+	case 'C':
+		spec->type = INT;
+		break;
+	default:
+		*nextarg = startarg;
+		return 1;
+	}
+	spec->arg = position ? position - 1 : *nextarg;
+	(*nextarg)++;
+	return 1;
+}
+
+static int
+printf_set_arg_type (struct printf_args *args, grub_size_t index, int type)
+{
+	if (index >= args->count)
+		return 0;
+	if (args->ptr[index].type != UNUSED && args->ptr[index].type != type)
+		return 0;
+	args->ptr[index].type = type;
+	return 1;
+}
+
+/* Check mode also rejects positional arguments, including *m$, so untrusted
+   formats cannot reinterpret a previously collected argument. */
 static grub_err_t
 parse_printf_arg_fmt (const char *fmt0, struct printf_args *args,
 		      int fmt_check, grub_size_t max_args)
 {
-  const char *fmt;
-  char c;
-  grub_size_t n = 0;
+	const char *fmt;
+	struct printf_format spec;
+	grub_size_t n = 0;
+	grub_size_t i;
 
-  args->count = 0;
+	args->count = 0;
+	COMPILE_TIME_ASSERT (sizeof (int) == sizeof (grub_uint32_t));
+	COMPILE_TIME_ASSERT (sizeof (int) <= sizeof (long long));
+	COMPILE_TIME_ASSERT (sizeof (long) <= sizeof (long long));
+	COMPILE_TIME_ASSERT (sizeof (long long) == sizeof (void *)
+			     || sizeof (int) == sizeof (void *));
+	COMPILE_TIME_ASSERT (sizeof (size_t) == sizeof (unsigned)
+			     || sizeof (size_t) == sizeof (unsigned long)
+			     || sizeof (size_t) == sizeof (unsigned long long));
 
-  COMPILE_TIME_ASSERT (sizeof (int) == sizeof (grub_uint32_t));
-  COMPILE_TIME_ASSERT (sizeof (int) <= sizeof (long long));
-  COMPILE_TIME_ASSERT (sizeof (long) <= sizeof (long long));
-  COMPILE_TIME_ASSERT (sizeof (long long) == sizeof (void *)
-		       || sizeof (int) == sizeof (void *));
-  COMPILE_TIME_ASSERT (sizeof (size_t) == sizeof (unsigned)
-		       || sizeof (size_t) == sizeof (unsigned long)
-		       || sizeof (size_t) == sizeof (unsigned long long));
-
-  fmt = fmt0;
-  while ((c = *fmt++) != 0)
-    {
-      if (c != '%')
-	continue;
-
-      if (*fmt =='-')
-	fmt++;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      if (*fmt == '$')
+	fmt = fmt0;
+	while (*fmt)
 	{
-	  if (fmt_check)
-	    return grub_error (GRUB_ERR_BAD_ARGUMENT,
-			       "positional arguments are not supported");
-	  fmt++;
+		if (*fmt++ != '%')
+			continue;
+		if (!parse_printf_format (&fmt, &spec, &n))
+		{
+			if (fmt_check)
+				return grub_error (GRUB_ERR_BAD_ARGUMENT, "incomplete format");
+			break;
+		}
+		if (fmt_check)
+		{
+			if (spec.positional)
+				return grub_error (GRUB_ERR_BAD_ARGUMENT, "positional arguments are not supported");
+			if (spec.type == UNUSED && (spec.conversion != '%'
+				|| spec.dynamic_width || spec.dynamic_precision))
+				return grub_error (GRUB_ERR_BAD_ARGUMENT, "unexpected format");
+			if (n > max_args)
+				return grub_error (GRUB_ERR_BAD_ARGUMENT, "too many arguments");
+		}
 	}
-
-      if (*fmt =='-')
-	fmt++;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      if (*fmt =='.')
-	fmt++;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      c = *fmt++;
-      if (c == 'z')
+	args->count = n;
+	if (args->count <= ARRAY_SIZE (args->prealloc))
+		args->ptr = args->prealloc;
+	else
 	{
-	  c = *fmt++;
-	  goto do_count;
+		args->ptr = grub_calloc (args->count, sizeof (args->ptr[0]));
+		if (!args->ptr)
+		{
+			if (fmt_check)
+				return grub_errno;
+			grub_errno = GRUB_ERR_NONE;
+			args->ptr = args->prealloc;
+			args->count = ARRAY_SIZE (args->prealloc);
+		}
 	}
-      if (c == 'l')
-	c = *fmt++;
-      if (c == 'l')
-	c = *fmt++;
+	for (i = 0; i < args->count; i++)
+		args->ptr[i].type = UNUSED;
 
- do_count:
-      switch (c)
+	fmt = fmt0;
+	n = 0;
+	while (*fmt)
 	{
-	case 'p':
-	  if (*(fmt) == 'G')
-	    ++fmt;
-	  /* Fall through. */
-	case 'x':
-	case 'X':
-	case 'u':
-	case 'd':
-	case 'o':
-	case 'c':
-	case 'C':
-	case 's':
-	  args->count++;
-	  break;
-	case '%':
-	  /* "%%" is the escape sequence to output "%". */
-	  break;
-	default:
-	  if (fmt_check)
-	    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unexpected format");
-	  break;
+		if (*fmt++ != '%')
+			continue;
+		if (!parse_printf_format (&fmt, &spec, &n))
+			break;
+		if (spec.type == UNUSED || spec.arg >= args->count
+			|| (spec.dynamic_width && spec.width_arg >= args->count)
+			|| (spec.dynamic_precision && spec.precision_arg >= args->count))
+			continue;
+		if (!printf_set_arg_type (args, spec.arg, spec.type)
+			|| (spec.dynamic_width && !printf_set_arg_type (args, spec.width_arg, INT))
+			|| (spec.dynamic_precision && !printf_set_arg_type (args, spec.precision_arg, INT)))
+			goto fail;
 	}
-    }
-
-  if (fmt_check && args->count > max_args)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "too many arguments");
-
-  if (args->count <= ARRAY_SIZE (args->prealloc))
-    args->ptr = args->prealloc;
-  else
-    {
-      args->ptr = grub_calloc (args->count, sizeof (args->ptr[0]));
-      if (!args->ptr)
-	{
-	  if (fmt_check)
-	    return grub_errno;
-
-	  grub_errno = GRUB_ERR_NONE;
-	  args->ptr = args->prealloc;
-	  args->count = ARRAY_SIZE (args->prealloc);
-	}
-    }
-
-  grub_memset (args->ptr, 0, args->count * sizeof (args->ptr[0]));
-
-  fmt = fmt0;
-  n = 0;
-  while ((c = *fmt++) != 0)
-    {
-      int longfmt = 0;
-      unsigned long curn;
-      const char *p;
-
-      if (c != '%')
-	continue;
-
-      curn = n++;
-
-      if (*fmt =='-')
-	fmt++;
-
-      p = fmt;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      if (*fmt == '$')
-	{
-	  curn = grub_strtoul (p, 0, 10);
-	  if (curn == 0)
-	    continue;
-	  curn--;
-	  fmt++;
-	}
-
-      if (*fmt =='-')
-	fmt++;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      if (*fmt =='.')
-	fmt++;
-
-      while (grub_isdigit (*fmt))
-	fmt++;
-
-      c = *fmt++;
-      if (c == '%')
-	{
-	  n--;
-	  continue;
-	}
-
-      if (c == 'z')
-	{
-	  c = *fmt++;
-	  if (sizeof (size_t) == sizeof (unsigned long))
-	    longfmt = 1;
-	  else if (sizeof (size_t) == sizeof (unsigned long long))
-	    longfmt = 2;
-	}
-      if (c == 'l')
-	{
-	  c = *fmt++;
-	  longfmt = 1;
-	}
-      if (c == 'l')
-	{
-	  c = *fmt++;
-	  longfmt = 2;
-	}
-      if (curn >= args->count)
-	continue;
-      switch (c)
-	{
-	case 'x':
-	case 'X':
-	case 'o':
-	case 'u':
-	  args->ptr[curn].type = UNSIGNED_INT + longfmt;
-	  break;
-	case 'd':
-	  args->ptr[curn].type = INT + longfmt;
-	  break;
-	case 'p':
-	  if (sizeof (void *) == sizeof (long long))
-	    args->ptr[curn].type = UNSIGNED_LONGLONG;
-	  else
-	    args->ptr[curn].type = UNSIGNED_INT;
-	  if (*(fmt) == 'G') {
-	    args->ptr[curn].type = UUID;
-	    ++fmt;
-	  }
-	  break;
-	case 's':
-	  args->ptr[curn].type = STRING;
-	  break;
-	case 'C':
-	case 'c':
-	  args->ptr[curn].type = INT;
-	  break;
-	}
-    }
-
-  return GRUB_ERR_NONE;
+	/* Repeated positions do not introduce extra va_args. Gaps cannot be read
+	   safely because the missing argument's type is unknown. */
+	while (args->count && args->ptr[args->count - 1].type == UNUSED)
+		args->count--;
+	for (i = 0; i < args->count; i++)
+		if (args->ptr[i].type == UNUSED)
+			goto fail;
+	return GRUB_ERR_NONE;
+fail:
+	args->count = 0;
+	return GRUB_ERR_NONE;
 }
 
 static void
@@ -1117,6 +1167,8 @@ parse_printf_args (const char *fmt0, struct printf_args *args, va_list args_in)
 	else
 	  args->ptr[n].ll = va_arg (args_in, unsigned int);
 	break;
+      case UNUSED:
+	break;
       }
 }
 
@@ -1130,229 +1182,242 @@ write_char (char *str, grub_size_t *count, grub_size_t max_len, unsigned char ch
 }
 
 static void
-write_number (char *str, grub_size_t *count, grub_size_t max_len, grub_size_t format1,
-	     char rightfill, char zerofill, char c, long long value)
+write_fill (char *str, grub_size_t *count, grub_size_t max_len,
+	    grub_size_t fill, char c)
 {
-  char tmp[32];
-  const char *p = tmp;
-  grub_size_t len;
-  grub_size_t fill;
+	if (*count < max_len)
+	{
+		grub_size_t available = max_len - *count;
 
-  len = grub_lltoa (tmp, c, value) - tmp;
-  fill = len < format1 ? format1 - len : 0;
-  if (! rightfill)
-    while (fill--)
-      write_char (str, count, max_len, zerofill);
-  while (*p)
-    write_char (str, count, max_len, *p++);
-  if (rightfill)
-    while (fill--)
-      write_char (str, count, max_len, zerofill);
+		grub_memset (str + *count, c, fill < available ? fill : available);
+	}
+	*count += fill;
+}
+
+static void
+write_number (char *str, grub_size_t *count, grub_size_t max_len,
+	      const struct printf_format *spec, unsigned long long value)
+{
+	char tmp[32];
+	const char *p = tmp;
+	char sign = 0;
+	char c = spec->conversion;
+	const char *prefix = "";
+	grub_size_t len, zeros = 0, fill, total, prefix_len = 0;
+
+	if (c == 'p')
+		c = 'x';
+	len = grub_lltoa (tmp, c, value) - tmp;
+	if (*p == '-')
+	{
+		sign = *p++;
+		len--;
+	}
+	else if (c == 'd')
+		sign = spec->sign;
+	if (spec->have_precision)
+	{
+		if (!spec->precision && !value)
+			len = 0;
+		if (spec->precision > len)
+			zeros = spec->precision - len;
+	}
+	if (spec->alternate && c == 'o' && ((!len) || (*p != '0' && !zeros)))
+		zeros = 1;
+	if (spec->conversion == 'p' || (spec->alternate && value && (c == 'x' || c == 'X')))
+	{
+		prefix = c == 'X' ? "0X" : "0x";
+		prefix_len = 2;
+	}
+	total = len + zeros + prefix_len + (sign != 0);
+	fill = spec->width > total ? spec->width - total : 0;
+	if (!spec->left && (!spec->zero || spec->have_precision))
+		write_fill (str, count, max_len, fill, ' ');
+	if (sign)
+		write_char (str, count, max_len, sign);
+	while (*prefix)
+		write_char (str, count, max_len, *prefix++);
+	if (!spec->left && spec->zero && !spec->have_precision)
+		write_fill (str, count, max_len, fill, '0');
+	write_fill (str, count, max_len, zeros, '0');
+	while (len--)
+		write_char (str, count, max_len, *p++);
+	if (spec->left)
+		write_fill (str, count, max_len, fill, ' ');
+}
+
+static void
+write_text (char *str, grub_size_t *count, grub_size_t max_len,
+	    const struct printf_format *spec, const char *text, grub_size_t len)
+{
+	grub_size_t fill = spec->width > len ? spec->width - len : 0;
+
+	if (!spec->left)
+		write_fill (str, count, max_len, fill, ' ');
+	while (len--)
+		write_char (str, count, max_len, *text++);
+	if (spec->left)
+		write_fill (str, count, max_len, fill, ' ');
 }
 
 static int
 grub_vsnprintf_real (char *str, grub_size_t max_len, const char *fmt0,
 		     struct printf_args *args)
 {
-  char c;
-  grub_size_t n = 0;
-  grub_size_t count = 0;
-  const char *fmt;
+	grub_size_t n = 0;
+	grub_size_t count = 0;
+	const char *fmt = fmt0;
 
-  fmt = fmt0;
-
-  while ((c = *fmt++) != 0)
-    {
-      unsigned int format1 = 0;
-      unsigned int format2 = ~ 0U;
-      char zerofill = ' ';
-      char rightfill = 0;
-      grub_size_t curn;
-
-      if (c != '%')
+	while (*fmt)
 	{
-	  write_char (str, &count, max_len, c);
-	  continue;
+		struct printf_format spec;
+		unsigned long long curarg;
+		char c = *fmt++;
+
+		if (c != '%')
+		{
+			write_char (str, &count, max_len, c);
+			continue;
+		}
+		if (!parse_printf_format (&fmt, &spec, &n))
+			break;
+		c = spec.conversion;
+		if (c == '%')
+		{
+			write_char (str, &count, max_len, c);
+			continue;
+		}
+		if (spec.type == UNUSED || spec.arg >= args->count)
+			continue;
+		if (spec.dynamic_width)
+		{
+			int width;
+
+			if (spec.width_arg >= args->count)
+				continue;
+			width = (int) args->ptr[spec.width_arg].ll;
+			if (width < 0)
+			{
+				spec.left = 1;
+				spec.width = 0U - (unsigned) width;
+			}
+			else
+				spec.width = (unsigned) width;
+		}
+		if (spec.dynamic_precision)
+		{
+			int precision;
+
+			if (spec.precision_arg >= args->count)
+				continue;
+			precision = (int) args->ptr[spec.precision_arg].ll;
+			spec.have_precision = precision >= 0;
+			if (spec.have_precision)
+				spec.precision = (unsigned) precision;
+		}
+		curarg = args->ptr[spec.arg].ll;
+		switch (c)
+		{
+		case 'p':
+			if (spec.type == UUID)
+			{
+				const grub_packed_guid_t *guid = (const grub_packed_guid_t *) (grub_addr_t) curarg;
+				struct printf_format field;
+				unsigned i;
+
+				if (!guid)
+				{
+					write_text (str, &count, max_len, &spec, "(null)", 6);
+					break;
+				}
+				grub_memset (&field, 0, sizeof (field));
+				field.zero = 1;
+				field.conversion = 'x';
+				field.width = 8;
+				write_number (str, &count, max_len, &field, guid->data1);
+				write_char (str, &count, max_len, '-');
+				field.width = 4;
+				write_number (str, &count, max_len, &field, guid->data2);
+				write_char (str, &count, max_len, '-');
+				write_number (str, &count, max_len, &field, guid->data3);
+				field.width = 2;
+				for (i = 0; i < 8; i++)
+				{
+					if (i == 0 || i == 2)
+						write_char (str, &count, max_len, '-');
+					write_number (str, &count, max_len, &field, guid->data4[i]);
+				}
+				break;
+			}
+			/* Fall through. */
+		case 'x':
+		case 'X':
+		case 'u':
+		case 'd':
+		case 'o':
+			write_number (str, &count, max_len, &spec, curarg);
+			break;
+		case 'c':
+		{
+			char ch = curarg & 0xff;
+
+			write_text (str, &count, max_len, &spec, &ch, 1);
+			break;
+		}
+		case 'C':
+		{
+			grub_uint32_t code = curarg;
+			int shift;
+			unsigned mask;
+			char encoded[4];
+			grub_size_t len = 0;
+
+			if (code <= 0x7f)
+			{
+				shift = 0;
+				mask = 0;
+			}
+			else if (code <= 0x7ff)
+			{
+				shift = 6;
+				mask = 0xc0;
+			}
+			else if (code <= 0xffff)
+			{
+				shift = 12;
+				mask = 0xe0;
+			}
+			else if (code <= 0x10ffff)
+			{
+				shift = 18;
+				mask = 0xf0;
+			}
+			else
+			{
+				code = '?';
+				shift = 0;
+				mask = 0;
+			}
+			encoded[len++] = mask | (code >> shift);
+			for (shift -= 6; shift >= 0; shift -= 6)
+				encoded[len++] = 0x80 | (0x3f & (code >> shift));
+			write_text (str, &count, max_len, &spec, encoded, len);
+			break;
+		}
+		case 's':
+		{
+			grub_size_t len = 0;
+			const char *p = curarg ? (const char *) (grub_addr_t) curarg : "(null)";
+
+			while ((!spec.have_precision || len < spec.precision) && p[len])
+				len++;
+			write_text (str, &count, max_len, &spec, p, len);
+			break;
+		}
+		}
 	}
-
-      curn = n++;
-
-    rescan:;
-
-      if (*fmt =='-')
-	{
-	  rightfill = 1;
-	  fmt++;
-	}
-
-      /* Read formatting parameters.  */
-      if (grub_isdigit (*fmt))
-	{
-	  if (fmt[0] == '0')
-	    zerofill = '0';
-	  format1 = grub_strtoul (fmt, &fmt, 10);
-	}
-
-      if (*fmt == '.')
-	fmt++;
-
-      if (grub_isdigit (*fmt))
-	format2 = grub_strtoul (fmt, &fmt, 10);
-
-      if (*fmt == '$')
-	{
-	  if (format1 == 0)
-	    continue;
-	  curn = format1 - 1;
-	  fmt++;
-	  format1 = 0;
-	  format2 = ~ 0U;
-	  zerofill = ' ';
-	  rightfill = 0;
-
-	  goto rescan;
-	}
-
-      c = *fmt++;
-      if (c == 'z')
-	c = *fmt++;
-      if (c == 'l')
-	c = *fmt++;
-      if (c == 'l')
-	c = *fmt++;
-
-      if (c == '%')
-	{
-	  write_char (str, &count, max_len, c);
-	  n--;
-	  continue;
-	}
-
-      if (curn >= args->count)
-	continue;
-
-      long long curarg = args->ptr[curn].ll;
-
-      switch (c)
-	{
-	case 'p':
-	  if (*(fmt) == 'G')
-	    {
-	      ++fmt;
-	      grub_packed_guid_t *guid = (grub_packed_guid_t *)(grub_addr_t) curarg;
-	      write_number (str, &count, max_len, 8, 0, '0', 'x', guid->data1);
-	      write_char (str, &count, max_len, '-');
-	      write_number (str, &count, max_len, 4, 0, '0', 'x', guid->data2);
-	      write_char (str, &count, max_len, '-');
-	      write_number (str, &count, max_len, 4, 0, '0', 'x', guid->data3);
-	      write_char (str, &count, max_len, '-');
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[0]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[1]);
-	      write_char (str, &count, max_len, '-');
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[2]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[3]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[4]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[5]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[6]);
-	      write_number (str, &count, max_len, 2, 0, '0', 'x', guid->data4[7]);
-	      break;
-	    }
-	  else
-	    {
-	      write_char (str, &count, max_len, '0');
-	      write_char (str, &count, max_len, 'x');
-	      c = 'x';
-	    }
-	  /* Fall through. */
-	case 'x':
-	case 'X':
-	case 'u':
-	case 'd':
-	case 'o':
-	  write_number (str, &count, max_len, format1, rightfill, zerofill, c, curarg);
-	  break;
-
-	case 'c':
-	  write_char (str, &count, max_len, curarg & 0xff);
-	  break;
-
-	case 'C':
-	  {
-	    grub_uint32_t code = curarg;
-	    int shift;
-	    unsigned mask;
-
-	    if (code <= 0x7f)
-	      {
-		shift = 0;
-		mask = 0;
-	      }
-	    else if (code <= 0x7ff)
-	      {
-		shift = 6;
-		mask = 0xc0;
-	      }
-	    else if (code <= 0xffff)
-	      {
-		shift = 12;
-		mask = 0xe0;
-	      }
-	    else if (code <= 0x10ffff)
-	      {
-		shift = 18;
-		mask = 0xf0;
-	      }
-	    else
-	      {
-		code = '?';
-		shift = 0;
-		mask = 0;
-	      }
-
-	    write_char (str, &count, max_len, mask | (code >> shift));
-
-	    for (shift -= 6; shift >= 0; shift -= 6)
-	      write_char (str, &count, max_len, 0x80 | (0x3f & (code >> shift)));
-	  }
-	  break;
-
-	case 's':
-	  {
-	    grub_size_t len = 0;
-	    grub_size_t fill;
-	    const char *p = (curarg != 0) ? ((char *) (grub_addr_t) curarg) : "(null)";
-	    grub_size_t i;
-
-	    while (len < format2 && p[len])
-	      len++;
-
-	    fill = len < format1 ? format1 - len : 0;
-
-	    if (!rightfill)
-	      while (fill--)
-		write_char (str, &count, max_len, zerofill);
-
-	    for (i = 0; i < len; i++)
-	      write_char (str, &count, max_len, *p++);
-
-	    if (rightfill)
-	      while (fill--)
-		write_char (str, &count, max_len, zerofill);
-	  }
-
-	  break;
-
-	default:
-	  write_char (str, &count, max_len, c);
-	  break;
-	}
-    }
-
-  if (count < max_len)
-    str[count] = '\0';
-  else
-    str[max_len] = '\0';
-  return count;
+	str[count < max_len ? count : max_len] = '\0';
+	return count;
 }
 
 int

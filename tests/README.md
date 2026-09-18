@@ -47,10 +47,17 @@ test an already built LinuxRover directly:
 python3 tests/run_product.py --cli build/linux/LinuxRover --probe build/linux/product_probe --output build/product-tests
 ```
 
+The printf probe also runs in the default suite. To run it alone, use
+`product_probe --printf formats`, `--printf trailing`, `--printf null`, and
+`--printf minimum`. Incomplete conversions stop at NUL without consuming
+arguments; `grub_printf_fmt_check` rejects them. `%C` widths count emitted UTF-8
+bytes, matching `%s` width units. Existing `n == 0` behavior is unchanged.
+
 ## Coverage and results
 
 | Area | Checks |
 | --- | --- |
+| GRUB printf | Native `grub_vsnprintf` and `grub_xvasprintf` versus libc for flags, integer precision, dynamic width/precision, and truncation; guarded-page incomplete formats, `LLONG_MIN`, positional arguments, `%z`, `%c` including NUL, UTF-8 `%C` byte widths, GUID/null output, and format-validator type checks |
 | Product path | ZIP/TAR/FAT12/ext2 root and child listings, directory extraction, exact file/directory inventory, sizes, SHA-256, empty files/directories, ext2 Unicode names |
 | Destination protection | Existing files/directories/symlinks, repeated sources, file-versus-directory collisions, existing directories reserving file names, Windows case/invalid/reserved names, Unicode filenames |
 | Failure recovery | Broken FAT chain followed by a valid file in one extraction: exit 1, diagnostic, success/error counters, failed output removal; truncated image; POSIX `RLIMIT_FSIZE` write failure with a later source still extracted |
