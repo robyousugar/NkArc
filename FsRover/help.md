@@ -518,6 +518,17 @@ limited to the three fixed topologies of the reference decoder.
 
 **Not supported:** encrypted entries, multi-volume sets, Deflate64.
 
+#### NSIS installers — `nsis`
+
+> Origin: FsRover · Label: no · UUID: no · Timestamps: per-file · Symlinks: none
+
+**Supported streams:** Stored, Deflate, LZMA, and Zstandard streams are supported in both solid and
+non-solid installers. LZMA streams may also use the optional x86 BCJ filter.
+
+**Not supported:** the historical headerless NSIS BZip2 dialect,
+`WriteUninstaller` patched-stub reconstruction, NSISBI extended layouts, and
+members larger than 1 GiB.
+
 #### ARJ — `arj`
 
 > Origin: 7-Zip · Label: no · UUID: no · Timestamps: per-file + volume · Symlinks: none
